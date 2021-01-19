@@ -1,11 +1,15 @@
 /* Program obsługujący układy czasowo-licznikT0interowe */
 #include <8051.h>
 
-/* 7segment display select */
+// 7segment display select
 __xdata unsigned char* CSDS = (__xdata unsigned char*) 0xFF30; 
-/* 7segment display buffer */
+// 7segment display buffer
 __xdata unsigned char* CSDB = (__xdata unsigned char*) 0xFF38;
+// klawiatura matrycowa klawisze od 8 do F 
+__xdata unsigned char* CSKB1 = (__xdata unsigned char*) 0xFF22;
 __sbit __at(0x96) S7ON; //bit przelączania wyświetlacza 7 sementowego
+__sbit __at(0x97) TLED; //bit diody TEST
+__sbit __at(0xB5) MUXK; //bit stan klawiatury MUX
 
 //znaki od 0 do F dla wyswietlacza 7 seg
 __code unsigned char znaki[16] = {0b00111111, 0b00000110, 0b01011011,
