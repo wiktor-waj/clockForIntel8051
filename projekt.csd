@@ -1,5 +1,7 @@
 /* Program obsługujący układy czasowo-licznikT0interowe */
 #include <8051.h>
+//skonczone zadania 1,2,3 (w 3 postaraj sie zrobic zeby mozna bylo kilka
+//klawiszy na raz wcisnac i usun cpl na tledzie z funkcji oblsugi klawiszy mux
 
 // 7segment display select
 __xdata unsigned char* CSDS = (__xdata unsigned char*) 0xFF30; 
@@ -11,13 +13,15 @@ __sbit __at(0x96) S7ON; //bit przelączania wyświetlacza 7 sementowego
 __sbit __at(0x97) TLED; //bit diody TEST
 __sbit __at(0xB5) MUXK; //bit stan klawiatury MUX
 
-//znaki od 0 do F dla wyswietlacza 7 seg
-__code unsigned char znaki[16] = {0b00111111, 0b00000110, 0b01011011,
+//od 0 do 9 znaki zwykle od 0 do 9
+//od 10 do 20 znaki z kropka od 0. do 9.
+__code unsigned char znaki[26] = {0b00111111, 0b00000110, 0b01011011,
 																 	0b01001111, 0b01100110, 0b01101101, 
 																	0b01111101, 0b00000111, 0b01111111, 
-																	0b01101111, 0b01110111, 0b00111100,
-																	0b10111001, 0b01011110, 0b01111001, 
-																	0b01110001};
+																	0b01101111, 0b10111111, 0b10000110,
+																	0b11011011, 0b11001111, 0b11100110,
+																	0b11101101, 0b11111101, 0b10000111,
+																	0b11111111, 0b11101111};
 
 //etykiety funkcji
 void refresh7Seg(void);
@@ -28,14 +32,28 @@ unsigned char rotateRight(unsigned char x);
 void t0Interrupt(void) __interrupt(1);
 void refreshTimeValuesFor7Seg(void);
 void updateTime(void);
+void obslugaKlawiaturyMat(void);
+void obslugaKlawiaturyMux(void);
 //zmienne
-unsigned char wybw; //wybrany wyswietlacz bitowo
-unsigned char iter7Seg; //index do iteracji po wyswietlaczach
-unsigned char wysw[6]; //tabela przechowująca dane do wyświetlania na wyś. 7seg.
+//zmienne data7segietlacza mux
+unsigned char wybranyWys; //wybrany data7segietlacz bitowo
+unsigned char iter7Seg; //index do iteracji po data7segietlaczach
+unsigned char data7seg[6]; //tabela przechowująca dane do wyświetlania na wyś. 7seg.
+//zmienne licznika T0 i czasowe
 int licznikT0inter; //licznik przerwań ukladu T0 -- powinień liczyć do 900
 unsigned char sekundy; //liczba sekund, które upłynęły
 unsigned char minuty; //liczba minut, ktore uplynely
 unsigned char godziny; //liczba godzin, ktore uplynely
+unsigned char stareSekundy; //liczba sekund potrzebne do edit mode
+unsigned char stareMinuty; //liczba minut potrzebne do edit mode
+unsigned char stareGodziny; //liczba godzin potrzebne do edit mode
+unsigned char selector; //selector == 0; wybrane sekundy; == 1 minuty; == 2 godziny
+//zmienne klawiatur
+unsigned char kbd1; //zmienna przyjmująca stan klawiatury klawisze 8..F
+unsigned char kbdPoprz; //poprzedni stan klawiatury (dla porównywania)
+unsigned char kbdMux; //stan klawiatury mux
+unsigned char kbdMuxPoprz; //poprzedni stan klawiatury mux
+//flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
 __bit editMode; //flaga trybu edycji
@@ -73,25 +91,48 @@ void updateTime(void)
 					godziny = 0;
 			}
 		}
-		P1_7 = 1 - P1_7;
 	}
 } //funkcja zajmuje sie aktualizacja wartosci czasu
 
 void refreshTimeValuesFor7Seg(void)
 {
-	if(iter7Seg == 0) //odswiezamy jednosci sekund
-		wysw[0] = sekundy % 10;
-	else if(iter7Seg == 1) //odswiezamy dziesiatki sekund
-		wysw[1] = (unsigned char)(sekundy / 10);
-	else if(iter7Seg == 2)  //odswiezamy jednosci minut
-		wysw[2] = minuty % 10;
-	else if(iter7Seg == 3) //odswiezamy dziesiatki minut
-		wysw[3] = (unsigned char)(minuty / 10);
-	else if(iter7Seg == 4) //odswiezamy jednosci godzin
-		wysw[4] = godziny % 10;
-	else if(iter7Seg == 5) //odswiezamy dziesiatki godzin
-		wysw[5] = (unsigned char)(godziny / 10);
-} //funkcja ta zajmuje sie odswiezaniem wartosci dla wyswietlaczy 7seg
+	if(iter7Seg == 0) {//odswiezamy jednosci sekund
+		if(editMode == 1 && selector == 0) //wtedy dajemy liczbe z kropka
+			data7seg[0] = sekundy % 10 + 10;
+		else
+			data7seg[0] = sekundy % 10;
+	}
+	else if(iter7Seg == 1) { //odswiezamy dziesiatki sekund
+		if(editMode == 1 && selector == 0) //wtedy dajemy liczbe z kropka
+			data7seg[1] = (unsigned char)(sekundy / 10) + 10;
+		else
+			data7seg[1] = (unsigned char)(sekundy / 10);
+	}
+	else if(iter7Seg == 2) { //odswiezamy jednosci minut
+		if(editMode == 1 && selector == 1) //wtedy dajemy liczbe z kropka
+			data7seg[2] = minuty % 10 + 10;
+		else
+			data7seg[2] = minuty % 10;
+	}
+	else if(iter7Seg == 3) { //odswiezamy dziesiatki minut
+		if(editMode == 1 && selector == 1) //wtedy dajemy liczbe z kropka
+			data7seg[3] = (unsigned char)(minuty / 10) + 10;
+		else
+			data7seg[3] = (unsigned char)(minuty / 10);
+	}
+	else if(iter7Seg == 4) { //odswiezamy jednosci godzin
+		if(editMode == 1 && selector == 2) //wtedy dajemy liczbe z kropka
+			data7seg[4] = godziny % 10 + 10;
+		else
+			data7seg[4] = godziny % 10;
+	}
+	else if(iter7Seg == 5) { //odswiezamy dziesiatki godzin
+		if(editMode == 1 && selector == 2) //wtedy dajemy liczbe z kropka
+			data7seg[5] = (unsigned char)(godziny / 10) + 10;
+		else
+			data7seg[5] = (unsigned char)(godziny / 10);
+	}
+} //funkcja ta zajmuje sie odswiezaniem wartosci dla data7segietlaczy 7seg
 
 //tutaj inicjujemy wszystko zwiazane z obsluga timera0 (zliczanie czasu)
 void timerInit(void)
@@ -106,13 +147,16 @@ void timerInit(void)
 	sekundy = 0;
 	minuty = 0;
 	godziny = 0;
+	flagInterruptT0 = flagSecondPassed = editMode = 0;
+	selector = 0;
 } //inicjalizacja timerów (i ich przerwań)
 
 void t0Interrupt(void) __interrupt(1)
 {
 	TH0 = 252; //przeładuj TH0
 	flagInterruptT0 = 1; //zasygnalizuj przerwanie
-	licznikT0inter++;
+	if(editMode == 0)
+		licznikT0inter++;
 	if(licznikT0inter == 900) {
 		flagSecondPassed = 1;
 	}
@@ -120,31 +164,138 @@ void t0Interrupt(void) __interrupt(1)
 
 void seg7Init(void)
 {
-	wybw = 0b00000001;
+	wybranyWys = 0b00000001;
 	iter7Seg = 0;
 	unsigned char i;
 	for(i = 0; i < 6; i++)
-		wysw[i] = 0;
-	P1_7 = 1;
+		data7seg[i] = 0;
 }
+
+void obslugaKlawiaturyMat(void)
+{
+	//work in progress
+	//obsluga jedynie strzalek w gore i dol
+}
+
+void obslugaKlawiaturyMux(void)
+{
+	if(kbdMux & 0b00000001) { // Enter (save changes)
+		TLED = 1 - TLED;
+		if(editMode == 1)
+			editMode = 0;
+	}
+	else if(kbdMux & 0b00000010) { //Esc (discard changes)
+		TLED = 1 - TLED;
+		if(editMode == 1) {
+			sekundy = stareSekundy;
+			minuty = stareMinuty;
+			godziny = stareGodziny;
+			editMode = 0;
+		}
+	}
+	else if(kbdMux & 0b00000100) { // ->
+		TLED = 1 - TLED;
+		if(editMode == 0) {
+			editMode = 1;
+			stareSekundy = sekundy;
+			stareMinuty = minuty;
+			stareGodziny = godziny;
+		}
+		if(selector == 0)
+			selector = 2;
+		else
+			selector--;
+	}
+	else if(kbdMux & 0b00100000) { // <-
+		TLED = 1 - TLED;
+		if(editMode == 0) {
+			editMode = 1;
+			stareSekundy = sekundy;
+			stareMinuty = minuty;
+			stareGodziny = godziny;
+		}
+		if(selector == 2)
+			selector = 0;
+		else
+			selector++;
+	}
+	else if(kbdMux & 0b00001000) { // ^ (strzalka w gore)
+		TLED = 1 - TLED;
+		if(editMode == 1) {
+			if(selector == 0) {
+				sekundy++;
+				if(sekundy == 60)
+					sekundy = 0;
+			}
+			else if(selector == 1) {
+				minuty++;
+				if(minuty == 60)
+					minuty = 0;
+			}
+			else if(selector == 2) {
+				godziny++;
+				if(godziny == 24)
+					godziny = 0;
+			}
+		}
+	}
+	else if(kbdMux & 0b00010000) { // V (strzalka w dol)
+		TLED = 1 - TLED;
+		if(editMode == 1) {
+			if(selector == 0) {
+				if(sekundy == 0)
+					sekundy = 59;
+				else
+					sekundy--;
+			}
+			else if(selector == 1) {
+				if(minuty == 0)
+					minuty = 59;
+				else
+					minuty--;
+			}
+			else if(selector == 2) {
+				if(godziny == 0)
+					godziny = 23;
+				else
+				godziny--;
+			}
+		}
+	}
+} //obsluga klawiszy klawiatury multipleksowanej
 
 void refresh7Seg(void)
 {
+	//obsługa klawiatury matrycowej
+	kbd1 = *CSKB1;
+	if(kbd1 != kbdPoprz)
+		obslugaKlawiaturyMat();
+	kbdPoprz = *CSKB1;
 
-	//refresh wyswietlaczy i ledów
+	//refresh data7segietlaczy
 	S7ON = 1; //wyłączam wyświetlacze
-	*CSDS =  wybw;
-	*CSDB = znaki[wysw[iter7Seg]];
+	*CSDS =  wybranyWys;
+	*CSDB = znaki[data7seg[iter7Seg]];
 	S7ON = 0; //włączam wyświetlacze
+
+	//obsługa klawiatury multipleksowanej
+	if(MUXK == 1) {
+		kbdMux = kbdMux | wybranyWys;
+		if(kbdMux != kbdMuxPoprz) {
+			obslugaKlawiaturyMux();
+		}
+	}
 
 	//przygotowania pod kolejny obrót pętli
 	iter7Seg++;
-	wybw = rotateLeft(wybw);
+	wybranyWys = rotateLeft(wybranyWys);
 	if(iter7Seg > 5) { //odświeżyliśmy wszystko
 		iter7Seg = 0;
-		wybw = 0b00000001;
+		wybranyWys = 0b00000001;
+		kbdMuxPoprz = kbdMux; //zapamietaj stan klawiatury na nastepne przejscie
+		kbdMux = 0; //po przecjsciu calego wyswietlacza resetuj stan klawiatury
 	}
-} /* funkcja ta zajmuje się refreshowaniem wyswietlaczy, diód led
+} /* funkcja ta zajmuje się refreshowaniem data7segietlaczy, diód led
 	 * oraz sprawdzaniem stanów klawiszy klawiatury matrycowej i multipleksowanej
 	 */
 
