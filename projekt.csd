@@ -1,7 +1,7 @@
 /* Program obsługujący układy czasowo-licznikT0interowe */
 #include <8051.h>
-//skonczone zadania 1,2,3 (w 3 postaraj sie zrobic zeby mozna bylo kilka
-//klawiszy na raz wcisnac i usun cpl na tledzie z funkcji oblsugi klawiszy mux
+//get chyba dziala -- set i edit sie niszczy czasem
+//zrob lepsze rozpoznawanie komend!!!
 
 // 7segment display select
 __xdata unsigned char* CSDS = (__xdata unsigned char*) 0xFF30; 
@@ -26,7 +26,7 @@ __code unsigned char znaki[26] = {0b00111111, 0b00000110, 0b01011011,
 //etykiety funkcji
 void refresh7Seg(void);
 void seg7Init(void);
-void timerInit(void);
+void timerSerialInit(void);
 unsigned char rotateLeft(unsigned char x);
 unsigned char rotateRight(unsigned char x);
 void t0Interrupt(void) __interrupt(1);
@@ -34,6 +34,10 @@ void refreshTimeValuesFor7Seg(void);
 void updateTime(void);
 void obslugaKlawiaturyMat(void);
 void obslugaKlawiaturyMux(void);
+void recognizeCommand(void);
+void obslugaSetCommand(void);
+void obslugaGetCommand(void);
+void wyczyscBuffery(void);
 //zmienne
 //zmienne data7segietlacza mux
 unsigned char wybranyWys; //wybrany data7segietlacz bitowo
@@ -53,25 +57,137 @@ unsigned char kbd1; //zmienna przyjmująca stan klawiatury klawisze 8..F
 unsigned char kbdPoprz; //poprzedni stan klawiatury (dla porównywania)
 unsigned char kbdMux; //stan klawiatury mux
 unsigned char kbdMuxPoprz; //poprzedni stan klawiatury mux
+//zmienne serial
+unsigned char recvBuff[12]; //bufor odbierania
+unsigned char sendBuff[8]; //bufor nadawania
+unsigned char iRecvB; //iterator bufora odbierania
+unsigned char iSendB; //iterator bufora nadawania
+unsigned char i; //iterator
+//uzyte 46/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
 __bit editMode; //flaga trybu edycji
-
+__bit recvFlg; //recieve flag
+__bit sendFlg; //send flag
+__bit setFlg; //flaga komendy set
+__bit getFlg; //flaga komendy get
+__bit editFlg; //flaga komendy edit
+//uzyte 8/128 bitow (16-bit addressable register)
 
 void main(void)
 {
 	seg7Init();
-	timerInit();
+	timerSerialInit();
 	while(1) {
 		if(flagInterruptT0 == 1) { //chcemy odświeżać tylko gdy jest przerwanie
 			flagInterruptT0 = 0;
+			TLED = 1;
 			
+						//zaktualizuj czas, wartosci dla wyswietlacza 7seg oraz odswiez 7seg
 			updateTime();
 			refreshTimeValuesFor7Seg();
 			refresh7Seg();
 		}
+
+		if(recvFlg == 1) {
+			TLED = 0;
+			recvFlg = 0;
+			recvBuff[iRecvB] = SBUF; //odbierz znak
+			if(iRecvB == 0)
+				recognizeCommand();
+			iRecvB++;
+		}
+		if(sendFlg == 1) {
+			sendFlg = 0;
+			if(iSendB < 8) {
+				SBUF = sendBuff[iSendB];
+				iSendB++;
+			}
+			//work in progress
+		}
+		//sprawdzmy teraz flagi komend
+		if(editFlg == 1) {
+			editFlg = 0;
+			if(editMode == 0) {
+				editMode = 1;
+				stareSekundy = sekundy;
+				stareMinuty = minuty;
+				stareGodziny = godziny;
+			}
+			iRecvB = 0;
+//			wyczyscBuffery();
+		}
+		if(getFlg == 1) {
+			getFlg = 0;
+			obslugaGetCommand();
+			iRecvB = 0;
+			iSendB = 0;
+//			wyczyscBuffery();
+			//work in progress
+		}
+		if(setFlg == 1) {
+			setFlg = 0;
+			obslugaSetCommand();
+			iRecvB = 0;
+//			wyczyscBuffery();
+		}
+
+	} //while
+} //main
+
+void recognizeCommand(void)
+{
+	if(recvBuff[0] == 'e' || recvBuff[0] == 'E')
+		editFlg = 1;
+	if(recvBuff[0] == 'g' || recvBuff[0] == 'G')
+		getFlg = 1;
+	if(recvBuff[0] == 's' || recvBuff[0] == 'S')
+		setFlg = 1;
+}
+
+void obslugaSetCommand(void) {
+	//chcemy rozpoznawac kazdy wariant set (SET, SE, S, set, se, s)
+	//wiec wystarczy sprawdzic gdzie jest spacja i wiemy od razu
+	//gdzie jest czas ktory trzeba wyluskac
+	i = 0;
+	while(recvBuff[i] != ' ')
+		i++;
+	editMode = 1;
+	godziny = minuty = sekundy = 0;
+	godziny = (recvBuff[i + 1] - 48) * 10 + (recvBuff[i + 2] - 48);
+	minuty = (recvBuff[i + 4] - 48) * 10 + (recvBuff[i + 5] - 48);
+	sekundy = (recvBuff[i + 7] - 48) * 10 + (recvBuff[i + 8] - 48);
+	editMode = 0;
+	i = 0;
+	//mega zbugowane 
+}
+
+void obslugaGetCommand(void)
+{
+	sendBuff[2] = sendBuff[5] = '.';
+	sendBuff[0] = (godziny / 10) + 48;
+	sendBuff[1] = godziny % 10 + 48;
+	sendBuff[3] = (minuty / 10) + 48;
+	sendBuff[4] = minuty % 10 + 48;
+	sendBuff[6] = (sekundy / 10) + 48;
+	sendBuff[7] = sekundy % 10 + 48;
+	iSendB = 0;
+	sendFlg = 1;
+}
+
+void wyczyscBuffery(void)
+{
+	iRecvB = 0;
+	iSendB = 0;
+	for(i = 0; i < 8; i++) {
+		sendBuff[i] = 0;
+		recvBuff[i] = 0;
 	}
+	for(; i < 12; i++) {
+		recvBuff[i] = 0;
+	}
+	i = 0;
 }
 
 void updateTime(void)
@@ -134,22 +250,43 @@ void refreshTimeValuesFor7Seg(void)
 	}
 } //funkcja ta zajmuje sie odswiezaniem wartosci dla data7segietlaczy 7seg
 
-//tutaj inicjujemy wszystko zwiazane z obsluga timera0 (zliczanie czasu)
-void timerInit(void)
+void timerSerialInit(void)
 {
-	TMOD = 0b01110001; //timer 1 wyłączony, timer 0 w trybie 16bitowym
-	TR0 = 1; //uruchom timer 0
-	ET0 = 1; //zezwól na przerwania od timera 0
-	EA = 1; //zezwól na przerwania ogólnie
+	//Konfiguracja portu szeregowego
+	SCON = 0b01010000; //M0=0, M1=1, M2=0, REN=1, TB8=0, RB8=0, TI=0, RI=0
+	//Praca portu transmisji szeregowej w trybie 1 wymaga skonfigurowania T1
+	TMOD = 0b00100001;
+	//timer1: gate1=0, ct1=0, t1m1=1, t1m0=0 -- tryb 2 (8bit TL1, reload TH1)
+	//timer0: gate0=0, ct0=0, t0m1=0, t0m0=1 -- tryb 1 (16bit TH0 + TL0)
+	PCON &= 0b01111111; //ustawiamy SMOD na 0
+
 	TH0 = 252; //chcemy przepełniać TH0 4 razy -- da to 900 przepełnień na sekundę
 	TL0 = 0; //TL0 ma być na 0
+	TH1 = 250; //chcemy zeby baudrate byl == 4800 wiec takie wartosci potrzebne
+	TL1 = 250; //dla timera 1 (razem z SMOD == 0)
+	TR0 = 1; //uruchom timer 0
+	TR1 = 1; //uruchom timer 1
+	TF1 = 0; //clear timer1 overflow
+
+	ET0 = 1; //zezwól na przerwania od timera 0
+	ES = 1; //zezwol na przerwania od portu szeregowego
+	EA = 1; //zezwól na przerwania ogólnie
+
+	//wartosci poczatkowe
 	licznikT0inter = 0; //licznikT0inter zlicza do 900 i jest inicjalizowany zerem
 	sekundy = 0;
 	minuty = 0;
 	godziny = 0;
 	flagInterruptT0 = flagSecondPassed = editMode = 0;
 	selector = 0;
-} //inicjalizacja timerów (i ich przerwań)
+
+	//upewniamy sie ze iteratori i flagi sa wyzerowane
+//	wyczyscBuffery();
+	iRecvB = iSendB = i = 0;
+	recvFlg = sendFlg = 0;
+	RI = TI = 0;
+	getFlg = setFlg = editFlg = 0;
+} //inicjalizacja timerów (i ich przerwań) oraz portu szeregowego
 
 void t0Interrupt(void) __interrupt(1)
 {
@@ -161,6 +298,18 @@ void t0Interrupt(void) __interrupt(1)
 		flagSecondPassed = 1;
 	}
 } //obsługa przerwania timera 0
+
+void serialInterrupt(void) __interrupt(4) __using(2) //using 2(bank) zeby zabespieczyc rejestr PSW przed nadpisaniem
+{
+	if(RI == 1) {
+		RI = 0;
+		recvFlg = 1;
+	}
+	if(TI == 1) {
+		TI = 0;
+		sendFlg = 1;
+	}
+} //obsluga przerwania portu transmisji szeregowej
 
 void seg7Init(void)
 {
@@ -180,12 +329,10 @@ void obslugaKlawiaturyMat(void)
 void obslugaKlawiaturyMux(void)
 {
 	if(kbdMux & 0b00000001) { // Enter (save changes)
-		TLED = 1 - TLED;
 		if(editMode == 1)
 			editMode = 0;
 	}
-	else if(kbdMux & 0b00000010) { //Esc (discard changes)
-		TLED = 1 - TLED;
+	if(kbdMux & 0b00000010) { //Esc (discard changes)
 		if(editMode == 1) {
 			sekundy = stareSekundy;
 			minuty = stareMinuty;
@@ -193,8 +340,7 @@ void obslugaKlawiaturyMux(void)
 			editMode = 0;
 		}
 	}
-	else if(kbdMux & 0b00000100) { // ->
-		TLED = 1 - TLED;
+	if(kbdMux & 0b00000100) { // ->
 		if(editMode == 0) {
 			editMode = 1;
 			stareSekundy = sekundy;
@@ -206,8 +352,7 @@ void obslugaKlawiaturyMux(void)
 		else
 			selector--;
 	}
-	else if(kbdMux & 0b00100000) { // <-
-		TLED = 1 - TLED;
+	if(kbdMux & 0b00100000) { // <-
 		if(editMode == 0) {
 			editMode = 1;
 			stareSekundy = sekundy;
@@ -219,8 +364,7 @@ void obslugaKlawiaturyMux(void)
 		else
 			selector++;
 	}
-	else if(kbdMux & 0b00001000) { // ^ (strzalka w gore)
-		TLED = 1 - TLED;
+	if(kbdMux & 0b00001000) { // ^ (strzalka w gore)
 		if(editMode == 1) {
 			if(selector == 0) {
 				sekundy++;
@@ -239,8 +383,7 @@ void obslugaKlawiaturyMux(void)
 			}
 		}
 	}
-	else if(kbdMux & 0b00010000) { // V (strzalka w dol)
-		TLED = 1 - TLED;
+	if(kbdMux & 0b00010000) { // V (strzalka w dol)
 		if(editMode == 1) {
 			if(selector == 0) {
 				if(sekundy == 0)
