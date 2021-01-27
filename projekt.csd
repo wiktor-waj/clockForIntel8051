@@ -58,12 +58,12 @@ unsigned char kbdPoprz; //poprzedni stan klawiatury (dla porównywania)
 unsigned char kbdMux; //stan klawiatury mux
 unsigned char kbdMuxPoprz; //poprzedni stan klawiatury mux
 //zmienne serial
-unsigned char recvBuff[12]; //bufor odbierania
+unsigned char recvBuff[14]; //bufor odbierania
 unsigned char sendBuff[8]; //bufor nadawania
 unsigned char iRecvB; //iterator bufora odbierania
 unsigned char iSendB; //iterator bufora nadawania
 unsigned char i; //iterator
-//uzyte 46/80 bajtow (General prupose)
+//uzyte 48/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
@@ -73,7 +73,8 @@ __bit sendFlg; //send flag
 __bit setFlg; //flaga komendy set
 __bit getFlg; //flaga komendy get
 __bit editFlg; //flaga komendy edit
-//uzyte 8/128 bitow (16-bit addressable register)
+__bit errorFlg; //flaga blednej komendy
+//uzyte 9/128 bitow (16-bit addressable register)
 
 void main(void)
 {
@@ -82,21 +83,27 @@ void main(void)
 	while(1) {
 		if(flagInterruptT0 == 1) { //chcemy odświeżać tylko gdy jest przerwanie
 			flagInterruptT0 = 0;
-			TLED = 1;
 			
-						//zaktualizuj czas, wartosci dla wyswietlacza 7seg oraz odswiez 7seg
+			//zaktualizuj czas, wartosci dla wyswietlacza 7seg oraz odswiez 7seg
 			updateTime();
 			refreshTimeValuesFor7Seg();
 			refresh7Seg();
 		}
 
 		if(recvFlg == 1) {
-			TLED = 0;
 			recvFlg = 0;
 			recvBuff[iRecvB] = SBUF; //odbierz znak
-			if(iRecvB == 0)
-				recognizeCommand();
-			iRecvB++;
+			if(recvBuff[iRecvB] == 10) { //znak LF
+				if(recvBuff[iRecvB - 1] == 13) { //znak CR (w sumie mamy CR+LF
+					recognizeCommand();
+					iRecvB = 0; //wyzeruj iterator bufora
+				}
+			}
+			else
+				iRecvB++;
+			if(iRecvB > 13) { //przekraczamy bufor, trzeba wyzerowac iterator
+				iRecvB = 0;
+			}
 		}
 		if(sendFlg == 1) {
 			sendFlg = 0;
@@ -115,22 +122,20 @@ void main(void)
 				stareMinuty = minuty;
 				stareGodziny = godziny;
 			}
-			iRecvB = 0;
-//			wyczyscBuffery();
 		}
 		if(getFlg == 1) {
 			getFlg = 0;
 			obslugaGetCommand();
-			iRecvB = 0;
 			iSendB = 0;
-//			wyczyscBuffery();
-			//work in progress
+			//trzeba cos poprawic, get znaczaco opoznia zliczanie czasu
 		}
 		if(setFlg == 1) {
 			setFlg = 0;
 			obslugaSetCommand();
-			iRecvB = 0;
-//			wyczyscBuffery();
+		}
+		if(errorFlg == 1) {
+			//tutaj trzeba zrobic error handling
+			errorFlg = 0;
 		}
 
 	} //while
@@ -138,29 +143,66 @@ void main(void)
 
 void recognizeCommand(void)
 {
-	if(recvBuff[0] == 'e' || recvBuff[0] == 'E')
-		editFlg = 1;
-	if(recvBuff[0] == 'g' || recvBuff[0] == 'G')
-		getFlg = 1;
-	if(recvBuff[0] == 's' || recvBuff[0] == 'S')
+	if(recvBuff[0] == 'S' && recvBuff[1] == 'E' && recvBuff[2] == 'T' && recvBuff[3] == ' ' && recvBuff[6] == '.' && recvBuff[9] == '.' && recvBuff[12] == 13 && recvBuff[13] == 10)
 		setFlg = 1;
+	else if(recvBuff[0] == 'G' && recvBuff[1] == 'E' && recvBuff[2] == 'T' && recvBuff[3] == 13 && recvBuff[4] == 10)
+		getFlg = 1;
+	else if(recvBuff[0] == 'E' && recvBuff[1] == 'D' && recvBuff[2] == 'I' && recvBuff[3] == 'T' && recvBuff[4] == 13 && recvBuff[5] == 10)
+		editFlg = 1;
+	else if(recvBuff[0] == 's' && recvBuff[1] == 'e' && recvBuff[2] == 't' && recvBuff[3] == ' ' && recvBuff[6] == '.' && recvBuff[9] == '.' && recvBuff[12] == 13 && recvBuff[13] == 10)
+		setFlg = 1;
+	else if(recvBuff[0] == 'g' && recvBuff[1] == 'e' && recvBuff[2] == 't' && recvBuff[3] == 13 && recvBuff[4] == 10)
+		getFlg = 1;
+	else if(recvBuff[0] == 'e' && recvBuff[1] == 'd' && recvBuff[2] == 'i' && recvBuff[3] == 't' && recvBuff[4] == 13 && recvBuff[5] == 10)
+		editFlg = 1;
+	else
+		errorFlg = 1;
+	if(setFlg == 1) { //sprawdzimy czy na pewno zostaly wyslane cyfry
+		if(recvBuff[4] < 48 || recvBuff[4] > 57) { //to nie jest cyfra
+			setFlg = 0;
+			errorFlg = 1;
+		}
+		if(recvBuff[5] < 48 || recvBuff[5] > 57) { //to nie jest cyfra
+			setFlg = 0;
+			errorFlg = 1;
+		}
+		if(recvBuff[7] < 48 || recvBuff[7] > 57) { //to nie jest cyfra
+			setFlg = 0;
+			errorFlg = 1;
+		}
+		if(recvBuff[8] < 48 || recvBuff[8] > 57) { //to nie jest cyfra
+			setFlg = 0;
+			errorFlg = 1;
+		}
+		if(recvBuff[10] < 48 || recvBuff[10] > 57) { //to nie jest cyfra
+			setFlg = 0;
+			errorFlg = 1;
+		}
+		if(recvBuff[11] < 48 || recvBuff[11] > 57) { //to nie jest cyfra
+			setFlg = 0;
+			errorFlg = 1;
+		}
+	}
 }
 
 void obslugaSetCommand(void) {
-	//chcemy rozpoznawac kazdy wariant set (SET, SE, S, set, se, s)
-	//wiec wystarczy sprawdzic gdzie jest spacja i wiemy od razu
-	//gdzie jest czas ktory trzeba wyluskac
-	i = 0;
-	while(recvBuff[i] != ' ')
-		i++;
 	editMode = 1;
+	//zapisz stare wartosci
+	stareSekundy = sekundy;
+	stareMinuty = minuty;
+	stareGodziny = godziny;
 	godziny = minuty = sekundy = 0;
-	godziny = (recvBuff[i + 1] - 48) * 10 + (recvBuff[i + 2] - 48);
-	minuty = (recvBuff[i + 4] - 48) * 10 + (recvBuff[i + 5] - 48);
-	sekundy = (recvBuff[i + 7] - 48) * 10 + (recvBuff[i + 8] - 48);
+	//zamien komende ascii na liczby
+	godziny = (recvBuff[4] - 48) * 10 + (recvBuff[5] - 48);
+	minuty = (recvBuff[7] - 48) * 10 + (recvBuff[8] - 48);
+	sekundy = (recvBuff[10] - 48) * 10 + (recvBuff[11] - 48);
+	if(godziny > 23 || minuty > 59 || sekundy > 59) { //zostala wpisana bledna godzina
+		errorFlg = 1;
+		godziny = stareGodziny;
+		minuty = stareMinuty;
+		sekundy = stareSekundy;
+	}
 	editMode = 0;
-	i = 0;
-	//mega zbugowane 
 }
 
 void obslugaGetCommand(void)
@@ -285,7 +327,7 @@ void timerSerialInit(void)
 	iRecvB = iSendB = i = 0;
 	recvFlg = sendFlg = 0;
 	RI = TI = 0;
-	getFlg = setFlg = editFlg = 0;
+	getFlg = setFlg = editFlg = errorFlg = editMode = 0;
 } //inicjalizacja timerów (i ich przerwań) oraz portu szeregowego
 
 void t0Interrupt(void) __interrupt(1)
@@ -294,7 +336,7 @@ void t0Interrupt(void) __interrupt(1)
 	flagInterruptT0 = 1; //zasygnalizuj przerwanie
 	if(editMode == 0)
 		licznikT0inter++;
-	if(licznikT0inter == 900) {
+	if(licznikT0inter >= 900) {
 		flagSecondPassed = 1;
 	}
 } //obsługa przerwania timera 0
