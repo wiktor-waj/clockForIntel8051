@@ -86,7 +86,7 @@ unsigned char iDspCmd; //iterator displayed command - iterator wyswietlanej kome
 //zmienne dla LCD
 unsigned char lcdStan;
 unsigned char i; //iterator do zastosowan ogolnych
-//uzyte 52/80 bajtow (General prupose)
+//uzyte 53/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
