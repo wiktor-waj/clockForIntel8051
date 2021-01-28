@@ -98,9 +98,10 @@ __bit getFlg; //flaga komendy get
 __bit editFlg; //flaga komendy edit
 __bit errorFlg; //flaga blednej komendy
 __bit wasErrorFlg; //jezeli byla bledna komenda
-__bit rfrshLCDFlg; //flaga która informuje nas, że trzeba odświeżyć LCD
 __bit wasEditMode; //flaga informujaca nas czy edit mode jest juz ustawiony podczas komendy set
-//uzyte 12/128 bitow (16-bit addressable register)
+__bit rfrshLCD; //flaga mowiaca nam ze mamy odswiezyc LCD
+__bit comesFromCmd; //flaga mowiaca nam ze mamy odswiezyc LCD pochodzaca od nadejscia komendy
+//uzyte 13/128 bitow (16-bit addressable register)
 
 void main(void)
 {
@@ -116,10 +117,15 @@ void main(void)
 			refreshTimeValuesFor7Seg();
 			refresh7Seg();
 
-			//odswiez LCD
-			if(rfrshLCDFlg == 1 && iter7Seg == 5) {
-				rfrshLCDFlg = 0;
+			if(rfrshLCD == 1 && iter7Seg == 5) {
+				rfrshLCD = 0;
 				refreshLCD();
+				if(comesFromCmd == 1) {
+					comesFromCmd = 0;
+					iLstCmd++;
+					if(iLstCmd == 10)
+						iLstCmd = 0;
+				}
 			}
 
 			//sprawdzmy teraz flagi komend
@@ -194,29 +200,23 @@ void main(void)
 
 void refreshLCD(void)
 {
-	if(iDspCmd == 0) { //specjalny przypadek gdy ostatnie 2 komendy sa w indeksach 9 i 8
-		sendStrToLCD(curCmds - 1);
-		sendStrToLCD(curCmds - 2);
+	//musimy wypisać 0, 1 albo 2 komendy na wyświetlaczu
+	if(curCmds == 1) {
+		sendStrToLCD(iDspCmd);
+		//wysylamy tylko 1 komende, przesun wyswietlacz o caly drugi rzad
+		for(i = 0; i < 40; i++)
+			lcdShiftDispl();
 	}
-	else {
-		//musimy wypisać 0, 1 albo 2 komendy na wyświetlaczu
-		if(curCmds == 1) {
-			sendStrToLCD(iDspCmd - 1);
-			//wysylamy tylko 1 komende, przesun wyswietlacz o caly drugi rzad
-			for(i = 0; i < 40; i++)
-				lcdShiftDispl();
+	else if(curCmds > 1) {
+		if(iDspCmd == 0) {
+			sendStrToLCD(0);
+			sendStrToLCD(curCmds - 1);
 		}
-		else if(curCmds > 1) {
-			if(iDspCmd - 1 == 0) {
-				sendStrToLCD(0);
-				sendStrToLCD(curCmds - 1);
-			}
-			else {
-				sendStrToLCD(iDspCmd - 1);
-				sendStrToLCD(iDspCmd - 2);
-			} //else
-		} //if 
-	} //else
+		else {
+			sendStrToLCD(iDspCmd);
+			sendStrToLCD(iDspCmd - 1);
+		} //else
+	} //if 
 } //refreshLCD
 
 void sendStrToLCD(unsigned char iS)
@@ -261,17 +261,14 @@ void sendCmdToHist(void) {
 		wasErrorFlg = 0;
 		cmdStat[iLstCmd] = 1;
 	}
-
-	//zaktualizuj iteratory
-	iLstCmd++;
-	if(iLstCmd > 10)
-		iLstCmd = 0;
+	//zmien iterator odswiezanych komend na obecna
 	iDspCmd = iLstCmd;
 	if(curCmds < 10)
 		curCmds++;
+	//i ustaw flage oswiezenia LCD oraz tego ze pochodzi od komendy
+	rfrshLCD = 1;
+	comesFromCmd = 1;
 
-	//ustaw flage, że LCD musi zostać odświeżony
-	rfrshLCDFlg = 1;
 
 } //ta wysyla komende z recvBuff do historii komend na następnie wysyła ją na wyświetlacz
 
@@ -420,8 +417,8 @@ void refreshTimeValuesFor7Seg(void)
 
 void lcdInit(void)
 {
+	rfrshLCD = comesFromCmd = 0;
 	//wyczyść flage refresh i iteratory
-	rfrshLCDFlg = 0;
 	iDspCmd = iLstCmd = curCmds = 0;
 	//wyczyść lcd
 	lcdWait();
@@ -530,21 +527,21 @@ void obslugaKlawiaturyMat(void)
 	//obsluga jedynie strzalek w gore i dol
 	if(kbd1 & 0b00100000) { //strzalka w gore (C)
 			if(curCmds > 1) {
-				if(iDspCmd == curCmds)
+				if(iDspCmd == curCmds - 1)
 					iDspCmd = 0;
 				else
 					iDspCmd++;
-			rfrshLCDFlg = 1;
+				rfrshLCD = 1;
 		}
 	}
 
 	if(kbd1 & 0b00010000) { //strzalka w dol (D)
 		if(curCmds > 1) {
 			if(iDspCmd == 0)
-				iDspCmd = curCmds;
+				iDspCmd = curCmds - 1;
 			else
 				iDspCmd--;
-			rfrshLCDFlg = 1;
+			rfrshLCD = 1;
 		}
 	}
 }
@@ -632,6 +629,12 @@ void obslugaKlawiaturyMux(void)
 
 void refresh7Seg(void)
 {
+	//obsługa klawiatury matrycowej
+	kbd1 = *CSKB1;
+	if(kbd1 != kbdPoprz)
+		obslugaKlawiaturyMat();
+	kbdPoprz = *CSKB1;
+	
 	//refresh data7segietlaczy
 	S7ON = 1; //wyłączam wyświetlacze
 	*CSDS =  wybranyWys;
@@ -645,12 +648,6 @@ void refresh7Seg(void)
 			obslugaKlawiaturyMux();
 		}
 	}
-
-	//obsługa klawiatury matrycowej
-	kbd1 = *CSKB1;
-	if(kbd1 != kbdPoprz)
-		obslugaKlawiaturyMat();
-	kbdPoprz = *CSKB1;
 
 	//przygotowania pod kolejny obrót pętli
 	iter7Seg++;
