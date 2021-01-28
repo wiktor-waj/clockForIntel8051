@@ -1,14 +1,21 @@
-/* Program obsługujący układy czasowo-licznikT0interowe */
+/* Program zaliczeniowy autor: Wiktor Wajszczuk */
 #include <8051.h>
-//get chyba dziala -- set i edit sie niszczy czasem
-//zrob lepsze rozpoznawanie komend!!!
-
+// adresy urządzeń wejścia/wyjścia
 // 7segment display select
 __xdata unsigned char* CSDS = (__xdata unsigned char*) 0xFF30; 
 // 7segment display buffer
 __xdata unsigned char* CSDB = (__xdata unsigned char*) 0xFF38;
 // klawiatura matrycowa klawisze od 8 do F 
 __xdata unsigned char* CSKB1 = (__xdata unsigned char*) 0xFF22;
+//LCD write command - wpis rozkazow na LCD
+__xdata unsigned char* LCDWC = (__xdata unsigned char*) 0xFF80;
+//LCD wrtie data - wpis danych na LCD
+__xdata unsigned char* LCDWD = (__xdata unsigned char*) 0xFF81;
+//LCD read command - odczyt stanu z LCD
+__xdata unsigned char* LCDRC = (__xdata unsigned char*) 0xFF82;
+//LCD read data - odczyt danych z LCD
+__xdata unsigned char* LCDRD = (__xdata unsigned char*) 0xFF83;
+//adresy bitów urządzeń
 __sbit __at(0x96) S7ON; //bit przelączania wyświetlacza 7 sementowego
 __sbit __at(0x97) TLED; //bit diody TEST
 __sbit __at(0xB5) MUXK; //bit stan klawiatury MUX
@@ -27,6 +34,7 @@ __code unsigned char znaki[26] = {0b00111111, 0b00000110, 0b01011011,
 void refresh7Seg(void);
 void seg7Init(void);
 void timerSerialInit(void);
+void lcdInit(void);
 unsigned char rotateLeft(unsigned char x);
 unsigned char rotateRight(unsigned char x);
 void t0Interrupt(void) __interrupt(1);
@@ -37,7 +45,12 @@ void obslugaKlawiaturyMux(void);
 void recognizeCommand(void);
 void obslugaSetCommand(void);
 void obslugaGetCommand(void);
-void wyczyscBuffery(void);
+void lcdWait(void);
+void lcdInit(void);
+void lcdShiftDispl(void);
+void sendCmdToHist(void);
+void refreshLCD(void);
+void sendStrToLCD(unsigned char iS);
 //zmienne
 //zmienne data7segietlacza mux
 unsigned char wybranyWys; //wybrany data7segietlacz bitowo
@@ -62,12 +75,18 @@ unsigned char recvBuff[14]; //bufor odbierania
 unsigned char sendBuff[8]; //bufor nadawania
 unsigned char iRecvB; //iterator bufora odbierania
 unsigned char iSendB; //iterator bufora nadawania
-unsigned char i; //iterator
 //zmienne do przechowywania komend
 __xdata __at(0x5000) unsigned char cmdHist[10][13]; //historia komend zapisywana w zewnentrznej pamieci RAM
-__xdata __at(0x4500) unsigned char cmdStat[10]; //status komend (0 - err; 1 - ok)
-unsigned char curCmds;
-//uzyte 48/80 bajtow (General prupose)
+__xdata __at(0x4500) unsigned char cmdStat[10]; //status komend (1 - err; 0 - ok)
+__code unsigned char ok[3] = {'O', 'K', '\0'}; //string OK
+__code unsigned char err[4] = {'E', 'R', 'R', '\0'}; //string ERR
+unsigned char curCmds; //ile obecnie komend w historii zapisanych
+unsigned char iLstCmd; //iterator ostatniej komendy
+unsigned char iDspCmd; //iterator displayed command - iterator wyswietlanej komendy
+//zmienne dla LCD
+unsigned char lcdStan;
+unsigned char i; //iterator do zastosowan ogolnych
+//uzyte 52/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
@@ -78,10 +97,14 @@ __bit setFlg; //flaga komendy set
 __bit getFlg; //flaga komendy get
 __bit editFlg; //flaga komendy edit
 __bit errorFlg; //flaga blednej komendy
-//uzyte 9/128 bitow (16-bit addressable register)
+__bit wasErrorFlg; //jezeli byla bledna komenda
+__bit rfrshLCDFlg; //flaga która informuje nas, że trzeba odświeżyć LCD
+__bit wasEditMode; //flaga informujaca nas czy edit mode jest juz ustawiony podczas komendy set
+//uzyte 12/128 bitow (16-bit addressable register)
 
 void main(void)
 {
+	lcdInit();
 	seg7Init();
 	timerSerialInit();
 	while(1) {
@@ -92,8 +115,55 @@ void main(void)
 			updateTime();
 			refreshTimeValuesFor7Seg();
 			refresh7Seg();
-		}
 
+			//odswiez LCD
+			if(rfrshLCDFlg == 1) {
+				rfrshLCDFlg = 0;
+				refreshLCD();
+			}
+
+			//sprawdzmy teraz flagi komend
+			//obsluga edit
+			if(editFlg == 1) {
+				editFlg = 0;
+				if(editMode == 0) {
+					editMode = 1;
+					stareSekundy = sekundy;
+					stareMinuty = minuty;
+					stareGodziny = godziny;
+				}
+				//wyslij komende do historii
+				sendCmdToHist();
+			}
+
+			//obsluga get
+			if(getFlg == 1) {
+				getFlg = 0;
+				obslugaGetCommand();
+				iSendB = 0;
+				//trzeba cos poprawic, get znaczaco opoznia zliczanie czasu
+				//wyslij komende do historii
+				sendCmdToHist();
+			}
+
+			//obsluga set
+			if(setFlg == 1) {
+				setFlg = 0;
+				obslugaSetCommand();
+				//wyslij komende do historii
+				sendCmdToHist();
+			}
+
+			//obsluga blednych komend
+			if(errorFlg == 1) {
+				errorFlg = 0;
+				wasErrorFlg = 1;
+				sendCmdToHist();
+			}
+			//koniec odswiezan
+		}
+	
+		//obsluzmy przerwanie od serial recieve
 		if(recvFlg == 1) {
 			recvFlg = 0;
 			recvBuff[iRecvB] = SBUF; //odbierz znak
@@ -109,44 +179,95 @@ void main(void)
 				iRecvB = 0;
 			}
 		}
+
+		//obsluzmy przerwanie od serial transmit
 		if(sendFlg == 1) {
 			sendFlg = 0;
 			if(iSendB < 8) {
 				SBUF = sendBuff[iSendB];
 				iSendB++;
 			}
-		}
-		//sprawdzmy teraz flagi komend
-		//obsluga edit
-		if(editFlg == 1) {
-			editFlg = 0;
-			if(editMode == 0) {
-				editMode = 1;
-				stareSekundy = sekundy;
-				stareMinuty = minuty;
-				stareGodziny = godziny;
-			}
-		}
-		//obsluga get
-		if(getFlg == 1) {
-			getFlg = 0;
-			obslugaGetCommand();
-			iSendB = 0;
-			//trzeba cos poprawic, get znaczaco opoznia zliczanie czasu
-		}
-		//obsluga set
-		if(setFlg == 1) {
-			setFlg = 0;
-			obslugaSetCommand();
-		}
-		//obsluga blednych komend
-		if(errorFlg == 1) {
-			//tutaj trzeba zrobic error handling
-			errorFlg = 0;
-		}
+		} //koniec obslugi nadawania serial
 
 	} //while
 } //main
+
+void refreshLCD(void)
+{
+	//musimy wypisać 0, 1 albo 2 komendy na wyświetlaczu
+	if(curCmds == 1) {
+		sendStrToLCD(iDspCmd - 1);
+		//wysylamy tylko 1 komende, przesun wyswietlacz o caly drugi rzad
+		for(i = 0; i < 40; i++)
+			lcdShiftDispl();
+	}
+	if(curCmds > 1) {
+		if(curCmds == 10 && iDspCmd - 1 == 0) {
+			sendStrToLCD(0);
+			sendStrToLCD(9);
+		}
+		else {
+			sendStrToLCD(iDspCmd - 1);
+			sendStrToLCD(iDspCmd - 2);
+		}
+	}
+}
+
+void sendStrToLCD(unsigned char iS)
+{
+	//wypisz komende
+	for(i = 0; cmdHist[iS][i] != '\0'; i++) {
+		lcdWait();
+		*LCDWD = cmdHist[iS][i];
+	}
+	//wypisz spacje i znak OK lub ERR
+	if(cmdStat[iS] == 1) { //jest error -> mniej spacji
+		for( ; i < 13; i++) {
+			lcdWait();
+			*LCDWD = ' ';
+		}
+		for( ; i < 16; i++) {
+			lcdWait();
+			*LCDWD = err[i - 13];
+		}
+	}
+	else { // nie ma error -> wiecej spacji
+		for( ; i < 14; i++) {
+			lcdWait();
+			*LCDWD = ' ';
+		}
+		for( ; i < 16; i++) {
+			lcdWait();
+			*LCDWD = ok[i - 14];
+		}
+	}
+	//przesun do nowej linii
+	for( ; i < 40; i++)
+		lcdShiftDispl();
+}
+
+void sendCmdToHist(void) {
+	//przepisz koemende do historii
+	for(i = 0; recvBuff[i] != 13; i++)
+		cmdHist[iLstCmd][i] = recvBuff[i];
+	cmdHist[iLstCmd][i] = '\0'; //znak konca linii zamiast entera
+	if(wasErrorFlg == 1) {  //daj etykiete komendzie (1 - ERR, 0 - OK)
+		wasErrorFlg = 0;
+		cmdStat[iLstCmd] = 1;
+	}
+
+	//zaktualizuj iteratory
+	iLstCmd++;
+	if(iLstCmd > 9)
+		iLstCmd = 0;
+	iDspCmd = iLstCmd;
+	if(curCmds < 10)
+		curCmds++;
+
+	//ustaw flage, że LCD musi zostać odświeżony
+	rfrshLCDFlg = 1;
+
+} //ta wysyla komende z recvBuff do historii komend na następnie wysyła ją na wyświetlacz
 
 void recognizeCommand(void)
 {
@@ -193,7 +314,10 @@ void recognizeCommand(void)
 }
 
 void obslugaSetCommand(void) {
-	editMode = 1;
+	if(editMode == 1)
+		wasEditMode = 1;
+	else
+		editMode = 1;
 	//zapisz stare wartosci
 	stareSekundy = sekundy;
 	stareMinuty = minuty;
@@ -204,12 +328,15 @@ void obslugaSetCommand(void) {
 	minuty = (recvBuff[7] - 48) * 10 + (recvBuff[8] - 48);
 	sekundy = (recvBuff[10] - 48) * 10 + (recvBuff[11] - 48);
 	if(godziny > 23 || minuty > 59 || sekundy > 59) { //zostala wpisana bledna godzina
-		errorFlg = 1;
+		wasErrorFlg = 1;
 		godziny = stareGodziny;
 		minuty = stareMinuty;
 		sekundy = stareSekundy;
 	}
-	editMode = 0;
+	if(wasEditMode == 1)
+		wasEditMode = 0;
+	else
+		editMode = 0;
 }
 
 void obslugaGetCommand(void)
@@ -285,6 +412,37 @@ void refreshTimeValuesFor7Seg(void)
 	}
 } //funkcja ta zajmuje sie odswiezaniem wartosci dla data7segietlaczy 7seg
 
+void lcdInit(void)
+{
+	//wyczyść flage refresh i iteratory
+	rfrshLCDFlg = 0;
+	iDspCmd = iLstCmd = curCmds = 0;
+	//wyczyść lcd
+	lcdWait();
+	*LCDWC = 0b00000001;
+	//ustaw funkcjonowanie wyświetlacza
+	//uzywaj magistrali 8bitow, uzywaj 2 linii, rozdzielczosc punktowa 5x7
+	lcdWait();
+	*LCDWC = 0b00111000;
+	//display control
+	//wyswietlaj dane z pamieci bez kursora i bez migania
+	lcdWait();
+	*LCDWC = 0b00001100;
+	//ustawienia trybu wejscia danych
+	//increment mode ON, bez shiftowania
+	lcdWait();
+	*LCDWC = 0b00000110;
+}
+
+void seg7Init(void)
+{
+	wybranyWys = 0b00000001;
+	iter7Seg = 0;
+	unsigned char i;
+	for(i = 0; i < 6; i++)
+		data7seg[i] = 0;
+}
+
 void timerSerialInit(void)
 {
 	//Konfiguracja portu szeregowego
@@ -320,8 +478,24 @@ void timerSerialInit(void)
 	iRecvB = iSendB = i = 0;
 	recvFlg = sendFlg = 0;
 	RI = TI = 0;
-	getFlg = setFlg = editFlg = errorFlg = editMode = 0;
+	getFlg = setFlg = editFlg = errorFlg = wasErrorFlg = editMode = 0;
 } //inicjalizacja timerów (i ich przerwań) oraz portu szeregowego
+
+void lcdShiftDispl(void)
+{
+	lcdWait();
+	*LCDWC = 0b00010100;
+} //przesuwanie wyswietlanego pola LCD w prawo o 1
+
+void lcdWait(void)
+{
+	lcdStan = *LCDRC;
+	lcdStan &= 0b10000000;
+	while(lcdStan != 0) {
+		lcdStan = *LCDRC;
+		lcdStan &= 0b10000000;
+	}
+} //oczekiwanie na gotowość LCD
 
 void t0Interrupt(void) __interrupt(1)
 {
@@ -345,15 +519,6 @@ void serialInterrupt(void) __interrupt(4) __using(2) //using 2(bank) zeby zabesp
 		sendFlg = 1;
 	}
 } //obsluga przerwania portu transmisji szeregowej
-
-void seg7Init(void)
-{
-	wybranyWys = 0b00000001;
-	iter7Seg = 0;
-	unsigned char i;
-	for(i = 0; i < 6; i++)
-		data7seg[i] = 0;
-}
 
 void obslugaKlawiaturyMat(void)
 {
