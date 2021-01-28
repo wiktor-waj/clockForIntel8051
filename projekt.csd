@@ -63,6 +63,10 @@ unsigned char sendBuff[8]; //bufor nadawania
 unsigned char iRecvB; //iterator bufora odbierania
 unsigned char iSendB; //iterator bufora nadawania
 unsigned char i; //iterator
+//zmienne do przechowywania komend
+__xdata __at(0x5000) unsigned char cmdHist[10][13]; //historia komend zapisywana w zewnentrznej pamieci RAM
+__xdata __at(0x4500) unsigned char cmdStat[10]; //status komend (0 - err; 1 - ok)
+unsigned char curCmds;
 //uzyte 48/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
@@ -111,9 +115,9 @@ void main(void)
 				SBUF = sendBuff[iSendB];
 				iSendB++;
 			}
-			//work in progress
 		}
 		//sprawdzmy teraz flagi komend
+		//obsluga edit
 		if(editFlg == 1) {
 			editFlg = 0;
 			if(editMode == 0) {
@@ -123,16 +127,19 @@ void main(void)
 				stareGodziny = godziny;
 			}
 		}
+		//obsluga get
 		if(getFlg == 1) {
 			getFlg = 0;
 			obslugaGetCommand();
 			iSendB = 0;
 			//trzeba cos poprawic, get znaczaco opoznia zliczanie czasu
 		}
+		//obsluga set
 		if(setFlg == 1) {
 			setFlg = 0;
 			obslugaSetCommand();
 		}
+		//obsluga blednych komend
 		if(errorFlg == 1) {
 			//tutaj trzeba zrobic error handling
 			errorFlg = 0;
@@ -216,20 +223,6 @@ void obslugaGetCommand(void)
 	sendBuff[7] = sekundy % 10 + 48;
 	iSendB = 0;
 	sendFlg = 1;
-}
-
-void wyczyscBuffery(void)
-{
-	iRecvB = 0;
-	iSendB = 0;
-	for(i = 0; i < 8; i++) {
-		sendBuff[i] = 0;
-		recvBuff[i] = 0;
-	}
-	for(; i < 12; i++) {
-		recvBuff[i] = 0;
-	}
-	i = 0;
 }
 
 void updateTime(void)
