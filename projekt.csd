@@ -73,7 +73,7 @@ unsigned char kbdMux; //stan klawiatury mux
 unsigned char kbdMuxPoprz; //poprzedni stan klawiatury mux
 //zmienne serial
 unsigned char recvBuff[14]; //bufor odbierania
-unsigned char sendBuff[8]; //bufor nadawania
+unsigned char sendBuff[10]; //bufor nadawania
 unsigned char iRecvB; //iterator bufora odbierania
 unsigned char iSendB; //iterator bufora nadawania
 //zmienne do przechowywania komend
@@ -87,7 +87,7 @@ unsigned char iDspCmd; //iterator displayed command - iterator wyswietlanej kome
 //zmienne dla LCD
 unsigned char lcdStan;
 unsigned char i; //iterator do zastosowan ogolnych
-//uzyte 53/80 bajtow (General prupose)
+//uzyte 55/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
@@ -189,7 +189,7 @@ void main(void)
 		//obsluzmy przerwanie od serial transmit
 		if(sendFlg == 1) {
 			sendFlg = 0;
-			if(iSendB < 8) {
+			if(iSendB < 9) {
 				SBUF = sendBuff[iSendB];
 				iSendB++;
 			}
@@ -360,6 +360,8 @@ void obslugaGetCommand(void)
 	sendBuff[4] = minuty % 10 + 48;
 	sendBuff[6] = (sekundy / 10) + 48;
 	sendBuff[7] = sekundy % 10 + 48;
+	sendBuff[8] = 10; //new line
+	sendBuff[9] = 13; //carriage return
 	iSendB = 0;
 	sendFlg = 1;
 }
