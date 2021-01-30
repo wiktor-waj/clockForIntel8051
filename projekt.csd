@@ -330,6 +330,9 @@ void obslugaSetCommand(void) {
 		wasEditMode = 1;
 	else
 		editMode = 1;
+	//zacznij zliczac sekunde od 0
+	if(flagSecondPassed != 1)
+		licznikT0inter = 0;
 	//zapisz stare wartosci
 	stareSekundy = sekundy;
 	stareMinuty = minuty;
