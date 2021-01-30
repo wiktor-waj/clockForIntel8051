@@ -21,8 +21,8 @@ __sbit __at(0x97) TLED; //bit diody TEST
 __sbit __at(0xB5) MUXK; //bit stan klawiatury MUX
 
 //od 0 do 9 znaki zwykle od 0 do 9
-//od 10 do 20 znaki z kropka od 0. do 9.
-__code unsigned char znaki[26] = {0b00111111, 0b00000110, 0b01011011,
+//od 10 do 19 znaki z kropka od 0. do 9.
+__code unsigned char znaki[20] = {0b00111111, 0b00000110, 0b01011011,
 																 	0b01001111, 0b01100110, 0b01101101, 
 																	0b01111101, 0b00000111, 0b01111111, 
 																	0b01101111, 0b10111111, 0b10000110,
@@ -51,6 +51,7 @@ void lcdShiftDispl(void);
 void sendCmdToHist(void);
 void refreshLCD(void);
 void sendStrToLCD(unsigned char iS);
+void enterEditMode(void);
 //zmienne
 //zmienne data7segietlacza mux
 unsigned char wybranyWys; //wybrany data7segietlacz bitowo
@@ -117,6 +118,7 @@ void main(void)
 			refreshTimeValuesFor7Seg();
 			refresh7Seg();
 
+			//odswiez LCD jezeli zaszla taka potrzeba, ale tylko gdy zostanie odswiezony caly wyswietlacz 7seg
 			if(rfrshLCD == 1 && iter7Seg == 5) {
 				rfrshLCD = 0;
 				refreshLCD();
@@ -132,12 +134,7 @@ void main(void)
 			//obsluga edit
 			if(editFlg == 1 && iter7Seg == 5) {
 				editFlg = 0;
-				if(editMode == 0) {
-					editMode = 1;
-					stareSekundy = sekundy;
-					stareMinuty = minuty;
-					stareGodziny = godziny;
-				}
+				enterEditMode();
 				//wyslij komende do historii
 				sendCmdToHist();
 			}
@@ -175,7 +172,10 @@ void main(void)
 			recvBuff[iRecvB] = SBUF; //odbierz znak
 			if(recvBuff[iRecvB] == 10) { //znak LF
 				if(recvBuff[iRecvB - 1] == 13) { //znak CR (w sumie mamy CR+LF
-					recognizeCommand();
+					if(iRecvB == 1) //pomin nadmiarowy enter
+						recvBuff[iRecvB - 1] = recvBuff[iRecvB] = ' ';
+					else
+						recognizeCommand();
 					iRecvB = 0; //wyzeruj iterator bufora
 				}
 			}
@@ -194,9 +194,20 @@ void main(void)
 				iSendB++;
 			}
 		} //koniec obslugi nadawania serial
-
 	} //while
 } //main
+
+void enterEditMode(void)
+{
+	if(editMode == 0) {
+		if(flagSecondPassed != 1)
+			licznikT0inter = 0;
+		editMode = 1;
+		stareSekundy = sekundy;
+		stareMinuty = minuty;
+		stareGodziny = godziny;
+	}
+}
 
 void refreshLCD(void)
 {
@@ -268,8 +279,6 @@ void sendCmdToHist(void) {
 	//i ustaw flage oswiezenia LCD oraz tego ze pochodzi od komendy
 	rfrshLCD = 1;
 	comesFromCmd = 1;
-
-
 } //ta wysyla komende z recvBuff do historii komend na następnie wysyła ją na wyświetlacz
 
 void recognizeCommand(void)
@@ -561,24 +570,14 @@ void obslugaKlawiaturyMux(void)
 		}
 	}
 	if(kbdMux & 0b00000100) { // ->
-		if(editMode == 0) {
-			editMode = 1;
-			stareSekundy = sekundy;
-			stareMinuty = minuty;
-			stareGodziny = godziny;
-		}
+		enterEditMode();
 		if(selector == 0)
 			selector = 2;
 		else
 			selector--;
 	}
 	if(kbdMux & 0b00100000) { // <-
-		if(editMode == 0) {
-			editMode = 1;
-			stareSekundy = sekundy;
-			stareMinuty = minuty;
-			stareGodziny = godziny;
-		}
+		enterEditMode();
 		if(selector == 2)
 			selector = 0;
 		else
