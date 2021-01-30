@@ -213,7 +213,7 @@ void enterEditMode(void)
 
 void refreshLCD(void)
 {
-	//musimy wypisać 0, 1 albo 2 komendy na wyświetlaczu
+	//musimy wypisać 1 albo 2 komendy na wyświetlaczu
 	if(curCmds == 1) {
 		sendStrToLCD(iDspCmd);
 		//wysylamy tylko 1 komende, przesun wyswietlacz o caly drugi rzad
@@ -221,15 +221,9 @@ void refreshLCD(void)
 			lcdShiftDispl();
 	}
 	else if(curCmds > 1) {
-		if(iDspCmd == 0) {
-			sendStrToLCD(0);
-			sendStrToLCD(curCmds - 1);
-		}
-		else {
-			sendStrToLCD(iDspCmd);
-			sendStrToLCD(iDspCmd - 1);
-		} //else
-	} //if 
+		sendStrToLCD(iDspCmd);
+		sendStrToLCD(iDspCmd - 1);
+	} //else if
 } //refreshLCD
 
 void sendStrToLCD(unsigned char iS)
@@ -550,9 +544,7 @@ void obslugaKlawiaturyMat(void)
 	//obsluga jedynie strzalek w gore i dol
 	if(kbd1 & 0b00100000) { //strzalka w gore (C)
 			if(curCmds > 1) {
-				if(iDspCmd == curCmds - 1)
-					iDspCmd = 0;
-				else
+				if(iDspCmd <= curCmds)
 					iDspCmd++;
 				rfrshLCD = 1;
 		}
@@ -560,9 +552,7 @@ void obslugaKlawiaturyMat(void)
 
 	if(kbd1 & 0b00010000) { //strzalka w dol (D)
 		if(curCmds > 1) {
-			if(iDspCmd == 0)
-				iDspCmd = curCmds - 1;
-			else
+			if(iDspCmd > 1)
 				iDspCmd--;
 			rfrshLCD = 1;
 		}
