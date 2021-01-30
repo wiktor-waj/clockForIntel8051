@@ -52,6 +52,7 @@ void sendCmdToHist(void);
 void refreshLCD(void);
 void sendStrToLCD(unsigned char iS);
 void enterEditMode(void);
+void toLowerCase(void);
 //zmienne
 //zmienne data7segietlacza mux
 unsigned char wybranyWys; //wybrany data7segietlacz bitowo
@@ -76,6 +77,7 @@ unsigned char recvBuff[14]; //bufor odbierania
 unsigned char sendBuff[10]; //bufor nadawania
 unsigned char iRecvB; //iterator bufora odbierania
 unsigned char iSendB; //iterator bufora nadawania
+unsigned char recognizeBuff[13]; //bufor ktory zawiera komende tylko z malymi literami (do rozpoznawania)
 //zmienne do przechowywania komend
 __xdata __at(0x5000) unsigned char cmdHist[10][13]; //historia komend zapisywana w zewnentrznej pamieci RAM
 __xdata __at(0x4500) unsigned char cmdStat[10]; //status komend (1 - err; 0 - ok)
@@ -87,7 +89,7 @@ unsigned char iDspCmd; //iterator displayed command - iterator wyswietlanej kome
 //zmienne dla LCD
 unsigned char lcdStan;
 unsigned char i; //iterator do zastosowan ogolnych
-//uzyte 55/80 bajtow (General prupose)
+//uzyte 68/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
@@ -281,19 +283,26 @@ void sendCmdToHist(void) {
 	comesFromCmd = 1;
 } //ta wysyla komende z recvBuff do historii komend na następnie wysyła ją na wyświetlacz
 
+void toLowerCase(void)
+{
+	//najpierw skopiuj komende z bufera odbiornika do bufera rozpoznawacza
+	for(i = 0; recvBuff[i] != 13; i++)
+		recognizeBuff[i] = recvBuff[i];
+	recognizeBuff[i] = '\0';
+	//teraz jeżeli jest wielka litera zamien ja na mala
+	for(i = 0; recognizeBuff[i] != '\0'; i++)
+		if(recognizeBuff[i] >= 'A' && recognizeBuff[i] <= 'Z') //32 to 'a' - 'A' ; 65 = 'A', 90 = 'Z'
+			recognizeBuff[i] += 32;
+}
+
 void recognizeCommand(void)
 {
-	if(recvBuff[0] == 'S' && recvBuff[1] == 'E' && recvBuff[2] == 'T' && recvBuff[3] == ' ' && recvBuff[6] == '.' && recvBuff[9] == '.' && recvBuff[12] == 13 && recvBuff[13] == 10)
+	toLowerCase();
+	if(recognizeBuff[0] == 's' && recognizeBuff[1] == 'e' && recognizeBuff[2] == 't' && recognizeBuff[3] == ' ' && recognizeBuff[6] == '.' && recognizeBuff[9] == '.' && recvBuff[12] == 13 && recvBuff[13] == 10)
 		setFlg = 1;
-	else if(recvBuff[0] == 'G' && recvBuff[1] == 'E' && recvBuff[2] == 'T' && recvBuff[3] == 13 && recvBuff[4] == 10)
+	else if(recognizeBuff[0] == 'g' && recognizeBuff[1] == 'e' && recognizeBuff[2] == 't' && recvBuff[3] == 13 && recvBuff[4] == 10)
 		getFlg = 1;
-	else if(recvBuff[0] == 'E' && recvBuff[1] == 'D' && recvBuff[2] == 'I' && recvBuff[3] == 'T' && recvBuff[4] == 13 && recvBuff[5] == 10)
-		editFlg = 1;
-	else if(recvBuff[0] == 's' && recvBuff[1] == 'e' && recvBuff[2] == 't' && recvBuff[3] == ' ' && recvBuff[6] == '.' && recvBuff[9] == '.' && recvBuff[12] == 13 && recvBuff[13] == 10)
-		setFlg = 1;
-	else if(recvBuff[0] == 'g' && recvBuff[1] == 'e' && recvBuff[2] == 't' && recvBuff[3] == 13 && recvBuff[4] == 10)
-		getFlg = 1;
-	else if(recvBuff[0] == 'e' && recvBuff[1] == 'd' && recvBuff[2] == 'i' && recvBuff[3] == 't' && recvBuff[4] == 13 && recvBuff[5] == 10)
+	else if(recognizeBuff[0] == 'e' && recognizeBuff[1] == 'd' && recognizeBuff[2] == 'i' && recognizeBuff[3] == 't' && recvBuff[4] == 13 && recvBuff[5] == 10)
 		editFlg = 1;
 	else
 		errorFlg = 1;
@@ -363,8 +372,8 @@ void obslugaGetCommand(void)
 	sendBuff[4] = minuty % 10 + 48;
 	sendBuff[6] = (sekundy / 10) + 48;
 	sendBuff[7] = sekundy % 10 + 48;
-	sendBuff[8] = 10; //new line
-	sendBuff[9] = 13; //carriage return
+	sendBuff[8] = 13; //carriage return
+	sendBuff[9] = 10; //new line
 	iSendB = 0;
 	sendFlg = 1;
 }
