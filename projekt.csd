@@ -86,10 +86,11 @@ __code unsigned char err[4] = {'E', 'R', 'R', '\0'}; //string ERR
 unsigned char curCmds; //ile obecnie komend w historii zapisanych
 unsigned char iLstCmd; //iterator ostatniej komendy
 unsigned char iDspCmd; //iterator displayed command - iterator wyswietlanej komendy
+signed char iWzgLast; //iterator ktory mowi nam ile komend mozemy pojsc do przodu/tylu wzgledem obecnej cmd
 //zmienne dla LCD
 unsigned char lcdStan;
 unsigned char i; //iterator do zastosowan ogolnych
-//uzyte 68/80 bajtow (General prupose)
+//uzyte 69/80 bajtow (General prupose)
 //flagi bitowe
 __bit flagInterruptT0; //flaga przerwania
 __bit flagSecondPassed; //flaga miniecia 1 sekundy
@@ -221,8 +222,14 @@ void refreshLCD(void)
 			lcdShiftDispl();
 	}
 	else if(curCmds > 1) {
-		sendStrToLCD(iDspCmd);
-		sendStrToLCD(iDspCmd - 1);
+		if(curCmds == 10 && iDspCmd == 0) {
+			sendStrToLCD(iDspCmd);
+			sendStrToLCD(9);
+		}
+		else {
+			sendStrToLCD(iDspCmd);
+			sendStrToLCD(iDspCmd - 1);
+		}
 	} //else if
 } //refreshLCD
 
@@ -260,7 +267,7 @@ void sendStrToLCD(unsigned char iS)
 }
 
 void sendCmdToHist(void) {
-	//przepisz koemende do historii
+	//przepisz komende do historii
 	for(i = 0; recvBuff[i] != 13; i++)
 		cmdHist[iLstCmd][i] = recvBuff[i];
 	cmdHist[iLstCmd][i] = '\0'; //znak konca linii zamiast entera
@@ -268,8 +275,11 @@ void sendCmdToHist(void) {
 		wasErrorFlg = 0;
 		cmdStat[iLstCmd] = 1;
 	}
-	//zmien iterator odswiezanych komend na obecna
+	else
+		cmdStat[iLstCmd] = 0;
+	//zmien iterator wyswietlanych komend na obecna
 	iDspCmd = iLstCmd;
+	iWzgLast = 0;
 	if(curCmds < 10)
 		curCmds++;
 	//i ustaw flage oswiezenia LCD oraz tego ze pochodzi od komendy
@@ -543,17 +553,42 @@ void obslugaKlawiaturyMat(void)
 {
 	//obsluga jedynie strzalek w gore i dol
 	if(kbd1 & 0b00100000) { //strzalka w gore (C)
-			if(curCmds > 1) {
-				if(iDspCmd <= curCmds)
+		if(curCmds > 2) {
+			if(curCmds == 10) {
+				if(iWzgLast >= 0) {
+					if(iDspCmd == 9) {
+						iDspCmd = 0;
+					}
+					else {
+						iDspCmd++;
+					}
+					iWzgLast--;
+				}
+			}
+			else {
+				if(iDspCmd < curCmds) {
 					iDspCmd++;
-				rfrshLCD = 1;
+				}
+			}
+//			rfrshLCD = 1;
 		}
 	}
 
 	if(kbd1 & 0b00010000) { //strzalka w dol (D)
-		if(curCmds > 1) {
-			if(iDspCmd > 1)
-				iDspCmd--;
+		if(curCmds > 2) {
+			if(curCmds == 10) {
+				if(iWzgLast < 8) {
+					if(iDspCmd == 0)
+						iDspCmd = 9;
+					else
+						iDspCmd--;
+					iWzgLast++;
+				}
+			}
+			else {
+				if(iDspCmd > 1)
+					iDspCmd--;
+			}
 			rfrshLCD = 1;
 		}
 	}
