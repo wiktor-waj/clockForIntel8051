@@ -125,7 +125,7 @@ void main(void)
 			//jezeli mux ma wcisniety przycisk i w poprzednim obrocie zezwolilismy na obsluge
 			if(MUXK && kbdMux == 0)
 				obslugaKlawiaturyMux();
-			//zezwol na obsluge klawisza jezeli przycisk nie wcisniety i sie nie zmienil od poprzedniego obrotu
+			//zezwol na obsluge klawisza jezeli nowy przycisk nie wcisniety
 			else if(!MUXK && kbdMux == kbdMuxPoprz)
 				kbdMux = 0;
 
