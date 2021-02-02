@@ -121,6 +121,14 @@ void main(void)
 			refreshTimeValuesFor7Seg();
 			refresh7Seg();
 
+			//obsluz klawiature multipleksowana
+			//jezeli mux ma wcisniety przycisk i w poprzednim obrocie zezwolilismy na obsluge
+			if(MUXK && kbdMux == 0)
+				obslugaKlawiaturyMux();
+			//zezwol na obsluge klawisza jezeli przycisk nie wcisniety i sie nie zmienil od poprzedniego obrotu
+			else if(!MUXK && kbdMux == kbdMuxPoprz)
+				kbdMux = 0;
+
 			//odswiez LCD jezeli zaszla taka potrzeba, ale tylko gdy zostanie odswiezony caly wyswietlacz 7seg
 			if(rfrshLCD == 1 && iter7Seg == 5) {
 				rfrshLCD = 0;
@@ -503,6 +511,7 @@ void timerSerialInit(void)
 	flagInterruptT0 = flagSecondPassed = editMode = 0;
 	selector = 0;
 
+	kbdMux = kbdMuxPoprz = kbd1 = kbdPoprz = 0;
 	//upewniamy sie ze iteratori i flagi sa wyzerowane
 	iRecvB = iSendB = i = 0;
 	recvFlg = sendFlg = 0;
@@ -596,11 +605,13 @@ void obslugaKlawiaturyMat(void)
 
 void obslugaKlawiaturyMux(void)
 {
-	if(kbdMux & 0b00000001) { // Enter (save changes)
+	//zobacz jaki przycisk trzeba obsluzyc
+	kbdMux = kbdMuxPoprz;
+	if(kbdMux == 0b00000001) { // Enter (save changes)
 		if(editMode == 1)
 			editMode = 0;
 	}
-	if(kbdMux & 0b00000010) { //Esc (discard changes)
+	if(kbdMux == 0b00000010) { //Esc (discard changes)
 		if(editMode == 1) {
 			sekundy = stareSekundy;
 			minuty = stareMinuty;
@@ -608,21 +619,21 @@ void obslugaKlawiaturyMux(void)
 			editMode = 0;
 		}
 	}
-	if(kbdMux & 0b00000100) { // ->
+	if(kbdMux == 0b00000100) { // ->
 		enterEditMode();
 		if(selector == 0)
 			selector = 2;
 		else
 			selector--;
 	}
-	if(kbdMux & 0b00100000) { // <-
+	if(kbdMux == 0b00100000) { // <-
 		enterEditMode();
 		if(selector == 2)
 			selector = 0;
 		else
 			selector++;
 	}
-	if(kbdMux & 0b00001000) { // ^ (strzalka w gore)
+	if(kbdMux == 0b00001000) { // ^ (strzalka w gore)
 		if(editMode == 1) {
 			if(selector == 0) {
 				sekundy++;
@@ -641,7 +652,7 @@ void obslugaKlawiaturyMux(void)
 			}
 		}
 	}
-	if(kbdMux & 0b00010000) { // V (strzalka w dol)
+	if(kbdMux == 0b00010000) { // V (strzalka w dol)
 		if(editMode == 1) {
 			if(selector == 0) {
 				if(sekundy == 0)
@@ -679,13 +690,8 @@ void refresh7Seg(void)
 	*CSDB = znaki[data7seg[iter7Seg]];
 	S7ON = 0; //włączam wyświetlacze
 
-	//obsługa klawiatury multipleksowanej
-	if(MUXK == 1) {
-		kbdMux = kbdMux | wybranyWys;
-		if(kbdMux != kbdMuxPoprz) {
-			obslugaKlawiaturyMux();
-		}
-	}
+	//zapamietujemy stan dla klawiatury multipleksowanej
+	kbdMuxPoprz = wybranyWys;
 
 	//przygotowania pod kolejny obrót pętli
 	iter7Seg++;
@@ -693,8 +699,6 @@ void refresh7Seg(void)
 	if(iter7Seg > 5) { //odświeżyliśmy wszystko
 		iter7Seg = 0;
 		wybranyWys = 0b00000001;
-		kbdMuxPoprz = kbdMux; //zapamietaj stan klawiatury na nastepne przejscie
-		kbdMux = 0; //po przecjsciu calego wyswietlacza resetuj stan klawiatury
 	}
 } /* funkcja ta zajmuje się refreshowaniem data7segietlaczy, diód led
 	 * oraz sprawdzaniem stanów klawiszy klawiatury matrycowej i multipleksowanej
