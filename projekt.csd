@@ -1,4 +1,6 @@
 /* Program zaliczeniowy autor: Wiktor Wajszczuk */
+/* Ustawienia transmisji szeregowej: baudrate == 4800; bity miedzy bajtami == 2; brak bitu parzystosci*/
+/* Przy wysylaniu rozkazow program oczekuje na koncu na enter */
 #include <8051.h>
 // adresy urządzeń wejścia/wyjścia
 // 7segment display select
@@ -474,9 +476,9 @@ void lcdInit(void)
 
 void seg7Init(void)
 {
+	unsigned char i;
 	wybranyWys = 0b00000001;
 	iter7Seg = 0;
-	unsigned char i;
 	for(i = 0; i < 6; i++)
 		data7seg[i] = 0;
 }
