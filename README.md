@@ -6,17 +6,23 @@
 sdcc clock.c
 ```
 In order to use program on DSM-51 emulator you will need to compile the program with modified `sdcc`. 
-This modification includes swtiching mcs51.lib library file attatched in this repository.
+This modification requires switching mcs51.lib library file attatched in this repository.
 Usualy you can find this library in
 ```
 /usr/share/sdcc/lib/small/mcs51.lib
 ```
 Once that's done recompile the program and run `clock.ihx` with DSM-51 emulator.
 ### Features
-- Setting time using multiplex keyboard arrows (edit mode)
-- Sending commands via serial port
+- Setting time using multiplex keyboard
+  - Left and right arrows - enter edit mode
+  - Up and down arrrows - edit selected field's value (only in edit mode)
+  - Enter - save changes
+  - Esc - discard changes
+- Sending commands via serial port (all commands case insensitive)
+
+   settings for serial transmission - baudrate = 4800, bits between bytes 2, no parity bit
   - `set hh.mm.ss` - set the time in format hours.minutes.seconds
   - `get` - outputs curretn time to serial port
   - `edit` - enter edit mode 
-  - Program is immune to incorrect commands, this will still be stored in history but will be labeled as ERR
-- View serial port command history on LCD display use up and down arrow to scroll through history
+  - Program is immune to incorrect commands, those will still be stored in history but will be labeled as ERR
+- View serial port command history on LCD display use up and down arrow keys on matrix keyboard to scroll through history
