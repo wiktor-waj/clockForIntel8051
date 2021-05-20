@@ -14,6 +14,7 @@ Usualy you can find this library in
 Once that's done recompile the program and run `clock.ihx` with DSM-51 emulator.
 ### Features
 - Setting time using multiplex keyboard
+
   ![mux_keyboard](images/mux.gif?raw=true)
   - Left and right arrows - enter edit mode
   - Up and down arrrows - edit selected field's value (only in edit mode)
