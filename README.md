@@ -19,4 +19,4 @@ Once that's done recompile the program and run `clock.ihx` with DSM-51 emulator.
   - `get` - outputs curretn time to serial port
   - `edit` - enter edit mode 
   - Program is immune to incorrect commands, this will still be stored in history but will be labeled as ERR
-- View serial port command history on LCD display use up and down arrow to scroll through history
+- View serial port command history on LCD display use up and down arrow keys on matrix keyboard to scroll through history
