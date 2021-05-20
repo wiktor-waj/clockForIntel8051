@@ -7,7 +7,7 @@ sdcc clock.c
 ```
 In order to use program on DSM-51 emulator you will need to compile the program with modified `sdcc`. 
 This modification requires switching mcs51.lib library file attatched in this repository.
-Usualy you can find this library in
+Usually you can find this library in
 ```
 /usr/share/sdcc/lib/small/mcs51.lib
 ```
