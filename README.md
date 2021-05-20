@@ -15,6 +15,7 @@ Once that's done recompile the program and run `clock.ihx` with DSM-51 emulator.
 ### Features
 - Setting time using multiplex keyboard arrows (edit mode)
 - Sending commands via serial port (all commands case insensitive)
+   settings for serial transmission - baudrate = 4800, bits between bytes 2, no parity bit
   - `set hh.mm.ss` - set the time in format hours.minutes.seconds
   - `get` - outputs curretn time to serial port
   - `edit` - enter edit mode 
