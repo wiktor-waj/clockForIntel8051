@@ -13,12 +13,16 @@ Usualy you can find this library in
 ```
 Once that's done recompile the program and run `clock.ihx` with DSM-51 emulator.
 ### Features
-- Setting time using multiplex keyboard arrows (edit mode)
+- Setting time using multiplex keyboard
+  - Left and right arrows - enter edit mode
+  - Up and down arrrows - edit selected field's value (only in edit mode)
+  - Enter - save changes
+  - Esc - discard changes
 - Sending commands via serial port (all commands case insensitive)
 
    settings for serial transmission - baudrate = 4800, bits between bytes 2, no parity bit
   - `set hh.mm.ss` - set the time in format hours.minutes.seconds
   - `get` - outputs curretn time to serial port
   - `edit` - enter edit mode 
-  - Program is immune to incorrect commands, this will still be stored in history but will be labeled as ERR
+  - Program is immune to incorrect commands, those will still be stored in history but will be labeled as ERR
 - View serial port command history on LCD display use up and down arrow keys on matrix keyboard to scroll through history
